@@ -261,16 +261,38 @@
 
             <!-- カテゴリ3: ボイス・ASMR・音楽 -->
             <section class="category-section">
-                <h2 class="category-title">ボイス・ASMR・音楽 <span style="font-size: 1rem; color: var(--text-muted); font-weight: normal;">(計 0作品)</span></h2>
+                <h2 class="category-title">ボイス・ASMR・音楽 <span style="font-size: 1rem; color: var(--text-muted); font-weight: normal;">(計 1作品)</span></h2>
                 <div class="grid">
-                    <div class="no-data">現在集約された作品はありません。</div>
+                    
+                    <div class="card">
+                        <a class="thumb-container" href="https://www.dlsite.com/maniax/work/=/product_id/RJ01660621.html" target="_blank" rel="noopener noreferrer">
+                            <img class="thumb" src="https://img.dlsite.jp/resize/images2/work/doujin/RJ01661000/RJ01660621_img_main_240x240.webp" loading="lazy">
+                            <div class="badge-overlay-top">
+                            </div>
+                            <div class="badge-overlay-bottom">
+                                <span class="badge badge-rank">最高 30位</span>
+                            </div>
+                        </a>
+                        <div class="card-content">
+                            <h3 class="work-title">
+                                <a href="https://www.dlsite.com/maniax/work/=/product_id/RJ01660621.html" target="_blank" rel="noopener noreferrer">筋肉モリモリマッチョ低音姉とイチャラブ日常姉弟エッチ</a>
+                            </h3>
+                            <div class="circle-name">
+                                <a href="https://www.dlsite.com/maniax/circle/profile/=/maker_id/RG68199.html" target="_blank" rel="noopener noreferrer">やぶいぬ製糖</a>
+                                <a href="https://www.google.com/search?q=RJ01660621" target="_blank" rel="noopener noreferrer" class="badge badge-id-green">RJ01660621</a>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
         <footer>
-            <p>最終更新日時: 2026-07-05 12:47</p>
+            <p>最終更新日時: 2026-07-05 13:22</p>
             <div class="reset-btn-container">
                 <button id="reset-btn" class="btn-reset">集約データをリセットする</button>
+            </div>
+            <div style="margin-top: 10px;">
+                <a href="#" id="clear-token-link" style="color: var(--text-muted); font-size: 0.75rem; text-decoration: underline; cursor: pointer;">トークンを再設定する</a>
             </div>
         </footer>
     </div>
@@ -281,11 +303,17 @@
             return;
         }
         
-        const token = prompt('GitHubのPersonal Access Token (PAT)を入力してください。\n（※このトークンはリポジトリのActionsを実行するためにブラウザの一時メモリ上でのみ使用され、外部に送信されることはありません。\n権限は `actions:write` または `repo` が必要です）');
+        // LocalStorageからトークンを取得
+        let token = localStorage.getItem('github_token');
         
+        // トークンがなければ入力させる
         if (!token) {
-            alert('トークンが入力されなかったため、処理をキャンセルしました。');
-            return;
+            token = prompt('GitHubのPersonal Access Token (PAT)を入力してください。\n（※入力されたトークンはブラウザのLocalStorageに保存され、次回以降の入力は不要になります。\n権限は actions:write または repo が必要です）');
+            if (!token) {
+                alert('トークンが入力されなかったため、処理をキャンセルしました。');
+                return;
+            }
+            localStorage.setItem('github_token', token);
         }
         
         const OWNER = "noname-human-1";
@@ -296,7 +324,18 @@
             return;
         }
         
-        const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/reset.yml/dispatches`;
+        executeReset(OWNER, REPO, token);
+    });
+
+    // トークンクリア用のリンクイベント
+    document.getElementById('clear-token-link').addEventListener('click', function(e) {
+        e.preventDefault();
+        localStorage.removeItem('github_token');
+        alert('保存されていたトークンを削除しました。次回の実行時に入力を求められます。');
+    });
+
+    function executeReset(owner, repo, token, isRetry = false) {
+        const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/reset.yml/dispatches`;
         
         // リセット中はボタンを無効化
         const btn = document.getElementById('reset-btn');
@@ -321,12 +360,27 @@
                 }, 3000);
             } else {
                 return response.json().then(data => {
+                    // トークンが無効な場合 (401 または 403)
+                    if (response.status === 401 || response.status === 403) {
+                        localStorage.removeItem('github_token'); // 無効なトークンを削除
+                        if (!isRetry) {
+                            alert('保存されていたトークンが無効または期限切れです。新しいトークンを入力してください。');
+                            const newToken = prompt('新しいGitHubのPersonal Access Token (PAT)を入力してください:');
+                            if (newToken) {
+                                localStorage.setItem('github_token', newToken);
+                                executeReset(owner, repo, newToken, true); // 再試行
+                                return;
+                            }
+                        }
+                    }
                     throw new Error(data.message || 'APIエラー');
                 });
             }
         })
         .catch(error => {
-            alert('エラーが発生しました: ' + error.message + '\nトークンの権限（actions:writeまたはrepo）やリポジトリの設定を確認してください。');
+            if (error.message !== 'Failed to fetch') {
+                alert('エラーが発生しました: ' + error.message + '\nトークンの権限（actions:writeまたはrepo）やリポジトリの設定を確認してください。');
+            }
             btn.disabled = false;
             btn.innerText = '集約データをリセットする';
             btn.style.backgroundColor = '#ef4444';

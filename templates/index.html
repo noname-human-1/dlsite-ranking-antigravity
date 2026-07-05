@@ -272,6 +272,9 @@
             <div class="reset-btn-container">
                 <button id="reset-btn" class="btn-reset">集約データをリセットする</button>
             </div>
+            <div style="margin-top: 10px;">
+                <a href="#" id="clear-token-link" style="color: var(--text-muted); font-size: 0.75rem; text-decoration: underline; cursor: pointer;">トークンを再設定する</a>
+            </div>
         </footer>
     </div>
 
@@ -281,11 +284,17 @@
             return;
         }
         
-        const token = prompt('GitHubのPersonal Access Token (PAT)を入力してください。\n（※このトークンはリポジトリのActionsを実行するためにブラウザの一時メモリ上でのみ使用され、外部に送信されることはありません。\n権限は `actions:write` または `repo` が必要です）');
+        // LocalStorageからトークンを取得
+        let token = localStorage.getItem('github_token');
         
+        // トークンがなければ入力させる
         if (!token) {
-            alert('トークンが入力されなかったため、処理をキャンセルしました。');
-            return;
+            token = prompt('GitHubのPersonal Access Token (PAT)を入力してください。\n（※入力されたトークンはブラウザのLocalStorageに保存され、次回以降の入力は不要になります。\n権限は actions:write または repo が必要です）');
+            if (!token) {
+                alert('トークンが入力されなかったため、処理をキャンセルしました。');
+                return;
+            }
+            localStorage.setItem('github_token', token);
         }
         
         const OWNER = "{{GITHUB_OWNER}}";
@@ -296,7 +305,18 @@
             return;
         }
         
-        const url = `https://api.github.com/repos/${OWNER}/${REPO}/actions/workflows/reset.yml/dispatches`;
+        executeReset(OWNER, REPO, token);
+    });
+
+    // トークンクリア用のリンクイベント
+    document.getElementById('clear-token-link').addEventListener('click', function(e) {
+        e.preventDefault();
+        localStorage.removeItem('github_token');
+        alert('保存されていたトークンを削除しました。次回の実行時に入力を求められます。');
+    });
+
+    function executeReset(owner, repo, token, isRetry = false) {
+        const url = `https://api.github.com/repos/${owner}/${repo}/actions/workflows/reset.yml/dispatches`;
         
         // リセット中はボタンを無効化
         const btn = document.getElementById('reset-btn');
@@ -321,12 +341,27 @@
                 }, 3000);
             } else {
                 return response.json().then(data => {
+                    // トークンが無効な場合 (401 または 403)
+                    if (response.status === 401 || response.status === 403) {
+                        localStorage.removeItem('github_token'); // 無効なトークンを削除
+                        if (!isRetry) {
+                            alert('保存されていたトークンが無効または期限切れです。新しいトークンを入力してください。');
+                            const newToken = prompt('新しいGitHubのPersonal Access Token (PAT)を入力してください:');
+                            if (newToken) {
+                                localStorage.setItem('github_token', newToken);
+                                executeReset(owner, repo, newToken, true); // 再試行
+                                return;
+                            }
+                        }
+                    }
                     throw new Error(data.message || 'APIエラー');
                 });
             }
         })
         .catch(error => {
-            alert('エラーが発生しました: ' + error.message + '\nトークンの権限（actions:writeまたはrepo）やリポジトリの設定を確認してください。');
+            if (error.message !== 'Failed to fetch') {
+                alert('エラーが発生しました: ' + error.message + '\nトークンの権限（actions:writeまたはrepo）やリポジトリの設定を確認してください。');
+            }
             btn.disabled = false;
             btn.innerText = '集約データをリセットする';
             btn.style.backgroundColor = '#ef4444';
